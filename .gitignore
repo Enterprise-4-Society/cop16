@@ -1,0 +1,30 @@
+# For Mac
+.DS_Store
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Remove jupiter checkpoints
+.ipynb_checkpoints
+*checkpoint*
+
+# discard .idea pycharm folder
+.idea/
+
+# discard excel files being edited
+~$*.xlsx
+~$*.csv
+
+# discard the virtual environment
+venv
+
+# discard shape files
+*.shp
+*.gpkg
+*.pdf
+*.xlsx
+*.csv
+*.tif
+
