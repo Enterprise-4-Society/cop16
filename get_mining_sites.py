@@ -1,8 +1,6 @@
 import geopandas as gpd
-import pandas as pd
-from adodbapi.process_connect_string import process
-
 import get_mine_owners
+from utils import get_polygons, load_data
 
 ###### LOAD DATA AND PARAMETERS #####################################################################################
 # Load the Jasanski geodataframe (main shape file)
@@ -12,7 +10,7 @@ gdf_path = 'data/mining/open_database_mine_production/data/facilities.gpkg'
 gdf2_path = 'data/mining/Maus-etal_2022_V2_allfiles/global_mining_polygons_v2.gpkg'
 
 filter_ownership = True
-ownership_map_parent = True
+by_parent_id = True
 
 ###### CLEAN DATA ###################################################################################################
 
@@ -126,7 +124,7 @@ def filter_for_subsites(gdf, filter_ownership):
         return gdf_filtered.reset_index(drop=True)
 
 
-def filter_sites(gdf, gdf2=None, filter_ownership=True, by_parent_id=True):
+def filter_mining_sites(gdf, gdf2=None, filter_ownership=True, by_parent_id=True):
     """Applies multiple filtering steps to retain relevant mining sites."""
     gdf = filter_by_production_start(gdf)
     gdf = filter_by_ownership(gdf, filter_ownership, by_parent_id)
@@ -158,26 +156,39 @@ def check_for_overlapping_polygons(gdf, gdf2):
 
 def process_mining_sites(gdf_path, gdf2_path=None, filter_ownership=True, by_parent_id=True):
     """Processes mining sites and returns a filtered geodataframe and corresponding ownership dataframe."""
+    print("\nProcessing mining sites\n")
     # Generate gdf_treated
-    gdf = gpd.read_file(gdf_path)
-    gdf2 = gpd.read_file(gdf2_path) if gdf2_path else None
+    gdf = load_data(gdf_path)
+    gdf2 = load_data(gdf2_path) if gdf2_path else None
+
+    # Clean gdf
     gdf = get_mine_owners.clean_facility_ids(gdf)
     gdf = allocate_missing_production_start(gdf)
     gdf = allocate_missing_geometry(gdf)
     gdf = remove_duplicated_sites(gdf)
-    gdf_treated = filter_sites(gdf, gdf2, filter_ownership, by_parent_id)
+
+    # Filter data for sites of interest
+    gdf_treated = filter_mining_sites(gdf, gdf2, filter_ownership, by_parent_id)
+
+    print("\nMining sites treated\n")
+
+    # Process gdf
+    gdf_processed = get_polygons(gdf_treated)
+
+    print("\nMining sites processed\n")
 
     # Generate ownership files based on filtered sites from gdf_treated
     if filter_ownership is True:
         own = get_mine_owners.process_mine_ownership()
-        own_treated = own[own["facility_id"].isin(gdf_treated["facility_id"])].drop(columns="id")
-        return gdf_treated, own_treated
+        own_processed = own[own["facility_id"].isin(gdf_treated["facility_id"])].drop(columns="id")
+        return gdf_processed, own_processed
 
     else:
-        return gdf_treated
+        return gdf_processed
 
+###### GET TREATED DATA #############################################################################################
 
-# gdf_treated, own_treated = process_mining_sites(gdf_path, gdf2_path=gdf2_path, filter_ownership=True, by_parent_id=True)
-
+gdf_treated, own_treated = process_mining_sites(gdf_path, gdf2_path=gdf2_path, filter_ownership=filter_ownership, by_parent_id=by_parent_id)
+# TODO: Check ee_geometry is usable for EVI
 
 

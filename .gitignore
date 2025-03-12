@@ -27,4 +27,12 @@ venv
 *.xlsx
 *.csv
 *.tif
+*.xml
+*.xls
+*.cpg
+*.dbf
+*.prj
+*.shx
+*.mdb
+
 

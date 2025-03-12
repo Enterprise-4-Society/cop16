@@ -3,6 +3,7 @@ import pandas as pd
 ###### LOAD DATA ####################################################################################################
 # Load Jasanski ownership dataset
 own_path = 'data/mining/open_database_mine_production/data/ownership.csv'
+# TODO: add load_data from utils.py
 
 ###### DATA CLEANING ################################################################################################
 ### Create the parent and subsite ids ###############################################################################
