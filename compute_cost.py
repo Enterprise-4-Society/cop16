@@ -23,7 +23,7 @@ def get_country():
 
 ###### PROCESS DATA #################################################################################################
 def process_cost(file_path=paf_path):
-    from get_natura_file import get_natura_sites
+    from get_natura_sites import get_natura_sites
 
     df = load_data(file_path)
 
