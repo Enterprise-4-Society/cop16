@@ -1,22 +1,31 @@
 import geopandas as gpd
 import get_mine_owners
-from utils import get_polygons, load_data
+from compute_evi import get_satellite
+from utils import load_data
 
-###### LOAD DATA AND PARAMETERS #####################################################################################
+###### LOAD DATA AND DEFINE PARAMETERS ##############################################################################
 # Load the Jasanski geodataframe (main shape file)
 gdf_path = 'data/mining/open_database_mine_production/data/facilities.gpkg'
 
 # Load the Maus geodataframe (complementary shape file)
 gdf2_path = 'data/mining/Maus-etal_2022_V2_allfiles/global_mining_polygons_v2.gpkg'
 
-filter_ownership = True
+# Define filter
+filter_ownership = False
 by_parent_id = True
+
+# Define evi output path
+if not filter_ownership:
+    evi_path = 'output/mining/no_ownership/'
+else:
+    evi_path = 'output/mining/with_ownership/'
 
 ###### CLEAN DATA ###################################################################################################
 
 ### Allocate main-site production start when subsite production start is missing ####################################
 def allocate_missing_production_start(gdf):
     """Fills missing production start dates from the parent facility when available."""
+
     # Step 1: Identify rows without a 'production_start' (NaN values)
     missing_production_start = gdf[gdf['production_start'].isna()]
 
@@ -30,6 +39,11 @@ def allocate_missing_production_start(gdf):
         if not parent_row.empty and not parent_row['production_start'].isna().values[0]:
             # Update the original DataFrame with the parent's 'production_start'
             gdf.at[idx, 'production_start'] = parent_row['production_start'].values[0]
+
+    # Step 3: Remove missing obs and convert date in int
+    gdf = gdf[gdf['production_start'].notna()]  # TODO: Decide if we should change the assumption
+    gdf["production_start"] = gdf["production_start"].astype(int)
+
     return gdf
 
 ### Allocate main-site geometry when subsites production start are missing ##########################################
@@ -59,12 +73,16 @@ def allocate_missing_geometry(gdf):
             gdf.at[idx, 'geometry'] = parent_rows.iloc[0]['geometry']
     return gdf
 
-def remove_duplicated_sites(gdf):
+def remove_duplicated_sites(gdf, filter_ownership=filter_ownership):
     # Manual assignment of duplicates based on associated ownership structure in own_treated
     to_drop =["COM00272.02", "COM00962.02", "COM00583.02", "COM00205.06", "COM01019.03", "COM01016.03", "COM01016.04", "COM00850.02"] + [ # Reason 1: Subsites (0X) or main-sites (00) within one facility have the same geometry and same ownership structure: we keep only one subsite - the lowest number i.e. 01 if 01 and 02 exist or 00 for 00 and 04)
         "COM00824.00", "COM01282.00", "COM01134.00", "COM00969.00", "COM00489.01", "COM00489.02"] + [                                     # Reason 2: Subsites (0X) or main-sites (00) within different facilities have the same geometry and same ownership structure: keep one facility - the one with the lowest value in facility_id)
 
         "COM00774.01", "COM00774.02", "COM01114.00", "COM00624.02", "COM00662.00"]                                                        # Reason 3: Subsites (0X) or main-sites (00) within different facilities have the same geometry but different ownership structures: drop them altogether
+
+    if not filter_ownership:
+        to_drop = (to_drop +
+                   ["COM01017.00", "COM01031.00", "COM01188.00","COM00955.01","COM01402.05","COM01402.03","COM01064.02","COM00938.00"])   # Reason 4: Subsites (0X) or main-sites (00) within different facilities have the same geometry: drop them altogether
 
     gdf = gdf[~gdf["facility_id"].isin(to_drop)]
     return gdf
@@ -168,27 +186,23 @@ def process_mining_sites(gdf_path, gdf2_path=None, filter_ownership=True, by_par
     gdf = remove_duplicated_sites(gdf)
 
     # Filter data for sites of interest
-    gdf_treated = filter_mining_sites(gdf, gdf2, filter_ownership, by_parent_id)
+    gdf_processed = filter_mining_sites(gdf, gdf2, filter_ownership, by_parent_id)
 
     print("\nMining sites treated\n")
 
     # Process gdf
-    gdf_processed = get_polygons(gdf_treated)
-
-    print("\nMining sites processed\n")
+    evi = get_satellite(gdf_processed, "facility_id", "production_start", evi_path)
 
     # Generate ownership files based on filtered sites from gdf_treated
-    if filter_ownership is True:
-        own = get_mine_owners.process_mine_ownership()
-        own_processed = own[own["facility_id"].isin(gdf_treated["facility_id"])].drop(columns="id")
-        return gdf_processed, own_processed
+    own = get_mine_owners.process_mine_ownership()
+    own_processed = own[own["facility_id"].isin(gdf_treated["facility_id"])].drop(columns="id")
 
-    else:
-        return gdf_processed
+    return own_processed, gdf_processed, evi
+
 
 ###### GET TREATED DATA #############################################################################################
 
-gdf_treated, own_treated = process_mining_sites(gdf_path, gdf2_path=gdf2_path, filter_ownership=filter_ownership, by_parent_id=by_parent_id)
-# TODO: Check ee_geometry is usable for EVI
+gdf_treated, own_treated, evi = process_mining_sites(gdf_path, gdf2_path=gdf2_path, filter_ownership=filter_ownership,
+                                                     by_parent_id=by_parent_id)
 
 

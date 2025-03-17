@@ -1,7 +1,10 @@
 import os
 from tarfile import data_filter
+
+import numpy as np
 import pandas as pd
-from utils import load_data, get_polygons
+from compute_evi import get_satellite
+from utils import load_data
 
 ###### LOAD DATA ####################################################################################################
 # Load the shape files of Natura 2000 sites
@@ -14,6 +17,8 @@ if os.path.exists(''):
 else:
     data_path = 'data/natura/eea_v_3035_100_k_natura2000_p_2021_v12_r01/TABULAR/MDB/Natura2000_end2021_rev1.mdb'
     # Available here: https://www.eea.europa.eu/en/datahub/datahubitem-view/6fc8ad2d-195d-40f4-bdec-576e7d1268e4?activeAccordion=1091667%2C1084066
+
+###### DEFINE PARAMETERS ###########################################################################################
 
 # Define variables of interest
 dict_variables = {'NATURA2000SITES': ["SITECODE",        # Unique code which forms the key-item within the database.
@@ -44,19 +49,34 @@ dict_variables = {'NATURA2000SITES': ["SITECODE",        # Unique code which for
                                 "PERCENTAGE"]
                   }
 
-###### DEFINE PARAMETERS ###########################################################################################
 
 # Define the forest habitats
 classification_path = 'data/natura/classification/habitat_classification.xlsx'
 leave_type = "Broad-leaved"
 
-###### CLEAN DATA ##################################################################################################
+# Define evi output path
+evi_path = 'output/natura/20250314/'
+processed_sites_path = 'output/natura/20250314/evi_2023_2y_summer.csv'
+post_date = 2023 # TODO: Make sure that post_date is the same as in compute_evi e.g. with path str
 
+###### FORMAT DATE #################################################################################################
 
+def format_data(dfs):
+    # Merge AREAHA to habitats for data check
+    dfs["HABITATS"] = dfs["HABITATS"].merge(
+        dfs["NATURA2000SITES"][["SITECODE", "AREAHA"]], how="left", on="SITECODE")
+
+    # Change date format of date column
+    dfs["NATURA2000SITES"]["DATE_SAC"] = dfs["NATURA2000SITES"]['DATE_SAC'].dt.year.astype('Int64')
+
+    return dfs
 
 
 ###### FILTER FOR RELEVANT SITES ###################################################################################
 ### Filter based on habitats #######################################################################################
+
+
+
 def filter_by_habitat(df, forest_path=classification_path, leave_type=leave_type):
     """
     Filters sites of df based on habitat classification and returns a list of site codes that contain the specified
@@ -105,10 +125,33 @@ def filter_for_sac(df):
     Parameters:
         df (pd.DataFrame): The main DataFrame containing habitat data with columns incl. "DATE_SAC" and "SITECODE".
 
-    Returns: list: A list of unique site codes (`SITECODE`) that are within countries of interest.
+    Returns: list: A list of unique site codes (`SITECODE`) that are SAC.
     """
     return df[df["DATE_SAC"].notna()]["SITECODE"].unique()
 
+def filter_for_inconsistencies(df):
+    """
+    Filters sites of df that have no cover/area inconsistencies (with a tolerance of 5% of total site area) and returns a list of site codes.
+
+    Parameters:
+        df (pd.DataFrame): The main DataFrame containing habitat data with columns incl. "COVER_HA", "AREAHA" and "SITECODE".
+
+    Returns: list: A list of unique site codes (`SITECODE`) that have habitat cover lower than total site area.
+    """
+    # Check if any individual observation violates the 5% threshold
+    sites_cover_area = df[df["COVER_HA"] - df["AREAHA"] > df["AREAHA"] * 0.05]["SITECODE"].unique()
+
+    # Group by SITECODE and check if total COVER_HA exceeds AREAHA
+    site_totals = df.groupby('SITECODE').agg(
+        total_cover=('COVER_HA', 'sum'),
+        site_area=('AREAHA', 'first')
+    )
+
+    sites_sum_cover_area = site_totals[site_totals['total_cover'] - site_totals['site_area'] > site_totals['site_area'] * 0.05].reset_index().SITECODE.unique()
+
+    sites_all = np.unique(np.concatenate((sites_cover_area, sites_sum_cover_area)))
+
+    return sites_all
 
 def get_natura_sites(dfs=None):
 
@@ -121,27 +164,36 @@ def get_natura_sites(dfs=None):
 
     # Filter sites
     filter_habitat_sites = filter_by_habitat(habitats)
+    filter_inconsistency_sites = filter_for_inconsistencies(habitats)
     filter_country_sites = filter_by_country(natura)
     filter_sac_sites = filter_for_sac(natura)
 
     # Find the intersect sites
-    sites_of_interest = list(set(filter_habitat_sites) & set(filter_country_sites) & set(filter_sac_sites))
+    sites_of_interest = list(set(filter_habitat_sites) & set(filter_country_sites) & set(filter_sac_sites) - set(filter_inconsistency_sites))
 
     return sites_of_interest
 
 
 ###### CHECK DATA ##################################################################################################
 def check_for_area(df):
-    abnormal_sites = df[df['COVER_HA'] > df["AREAHA"]]
+    # Check if any individual observation violates the 5% threshold
+    abnormal_sites = df[df['COVER_HA'] - df["AREAHA"] > df["AREAHA"] * 0.05]
     if not abnormal_sites.empty:
-        raise ValueError(f"Some sites have a habitat cover larger than total area in ha. These sites include:"
+        raise ValueError(f"Some sites have a habitat cover larger than total area in ha (+ up to 5% of total area). These sites include:"
                          f">\n {abnormal_sites["SITECODE"].unique}")
 
+    # Group by SITECODE and check if total COVER_HA exceeds AREAHA
+    site_totals = df.groupby('SITECODE').agg(
+        total_cover=('COVER_HA', 'sum'),
+        site_area=('AREAHA', 'first')
+    )
 
-###### MERGE DATA ##################################################################################################
+    exceeded_sites = site_totals[site_totals['total_cover'] - site_totals['site_area'] > site_totals['site_area'] * 0.05]
 
-
-
+    if not exceeded_sites.empty:
+        raise ValueError(
+            f"Some sites have a total habitat cover larger than their total area in ha. These sites include:"
+            f">\n {exceeded_sites.index.tolist()}")
 
 
 ###### PROCESS DATA ################################################################################################
@@ -150,29 +202,34 @@ def process_natura_sites(gdf_path=gdf_path, data_path=data_path, dict_variables=
     gdf = load_data(gdf_path)
     data = load_data(data_path, table_dict=dict_variables)
 
+    # Format data
+    data_formatted = format_data(data)
+
     # Define sites of interest
-    sites_of_interest = get_natura_sites(dfs=data)
+    sites_of_interest = get_natura_sites(dfs=data_formatted)
 
     # Filter data for sites of interest
     data_processed = {}
-    for table_name, df in data.items():
+    for table_name, df in data_formatted.items():
         data_processed[table_name] = df[df["SITECODE"].isin(sites_of_interest)]
 
-    # Merge AREAHA to habitats for data check
-    data_processed["HABITATS"] = data_processed["HABITATS"].merge(data_processed["NATURA2000SITES"][["SITECODE", "AREAHA"]], how="left", on="SITECODE")
-
     # Check for inconsistencies
-    # check_for_area(data_processed["HABITATS"])  # TODO: Solve inconsistencies (9 sites)
+    check_for_area(data_processed["HABITATS"])
 
     print("\nNatura 2000 data processed\n")
 
     # Process gdf
-    gdf_processed = get_polygons(gdf, "SITECODE", sites_of_interest)
+    gdf_processed = gdf[gdf["SITECODE"].isin(sites_of_interest)].merge(data_processed["NATURA2000SITES"][["SITECODE", "DATE_SAC"]])
+
+    # Compute evi
+    evi = get_satellite(gdf_processed, "SITECODE", "DATE_SAC", evi_path)
 
     print("\nNatura 2000 polygons processed\n")
 
-    return data_processed["NATURA2000SITES"], data_processed["HABITATS"], data_processed["BIOREGION"], gdf_processed
+    return data_processed, gdf_processed, evi
 
-# natura, habitats, bioregion, gdf_processed = process_natura_sites()
-# TODO: Check ee_geometry is usable for EVI
+###### GET TREATED DATA #############################################################################################
+
+data_processed, gdf_processed, evi = process_natura_sites()
+
 
