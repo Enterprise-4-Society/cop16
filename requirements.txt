@@ -1,0 +1,8 @@
+pandas
+numpy
+geopandas
+shapely
+tqdm
+chardet
+pyodbc
+earthengine-api
