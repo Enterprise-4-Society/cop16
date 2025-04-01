@@ -1,9 +1,9 @@
 import pyodbc
 import pandas as pd
 import geopandas as gpd
-import ee
 import os
 import warnings
+import chardet
 
 # Suppress the PyODBC UserWarning
 warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy connectable")
@@ -12,7 +12,7 @@ warnings.filterwarnings("ignore", message="pandas only supports SQLAlchemy conne
 warnings.filterwarnings("ignore", category=pd.errors.DtypeWarning)
 
 ###### LOAD DATA ####################################################################################################
-def load_data(file_path, sheet_name=None, table_dict=None, encoding="utf-8", delimiter=","):
+def load_data(file_path, sheet_name=None, table_dict=None, delimiter=None):
     """
     Loads data from various file formats including CSV, Excel (XLSX), Access (MDB), Shapefile (SHP), and Geopackage (GPKG).
 
@@ -20,9 +20,6 @@ def load_data(file_path, sheet_name=None, table_dict=None, encoding="utf-8", del
         file_path (str): The path to the file.
         sheet_name (str, optional): The sheet name for Excel files (XLSX).
         table_dict (list of str, optional): The table name(s) for Access (MDB) and Geopackage (GPKG) databases.
-        encoding (str, optional): Encoding format for CSV files (default: "utf-8").
-        delimiter (str, optional): Delimiter for CSV files (default: ",").
-
     Returns:
         pandas.DataFrame, dictionary of pandas.DataFrame or geopandas.GeoDataFrame: The loaded data.
     """
@@ -34,7 +31,16 @@ def load_data(file_path, sheet_name=None, table_dict=None, encoding="utf-8", del
         file_extension = file_path.split('.')[-1].lower()
 
         if file_extension == 'csv':
-            return pd.read_csv(file_path, encoding=encoding, delimiter=delimiter)
+            with open(file_path, 'rb') as f:
+                # Get encoding
+                raw_data = f.read(10000)  # Read first 10 000 bytes
+                result = chardet.detect(raw_data)
+                detected_encoding = result["encoding"]
+                print(f"Detected encoding: {detected_encoding}")
+
+                # Read CSV with detected encoding and delimiter
+            df = pd.read_csv(file_path, encoding=detected_encoding, delimiter=delimiter, quotechar='"')
+            return df
 
         elif file_extension in ['xls', 'xlsx']:
             if sheet_name is None:

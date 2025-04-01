@@ -1,9 +1,9 @@
 import pandas as pd
+from utils import load_data
 
 ###### LOAD DATA ####################################################################################################
 # Load Jasanski ownership dataset
 own_path = 'data/mining/open_database_mine_production/data/ownership.csv'
-# TODO: add load_data from utils.py
 
 ###### DATA CLEANING ################################################################################################
 ### Create the parent and subsite ids ###############################################################################
@@ -132,7 +132,7 @@ def restructure_ownership(df):
 
 def process_mine_ownership(file_path=own_path):
     """Executes the full ownership data processing pipeline and returns the final DataFrame."""
-    df = pd.read_csv(file_path)
+    df = load_data(file_path)
     df = clean_facility_ids(df)
     df = apply_replacements(df)
     df_recent = keep_most_recent_owners(df)

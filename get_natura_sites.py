@@ -49,6 +49,7 @@ dict_variables = {'NATURA2000SITES': ["SITECODE",        # Unique code which for
                                 "PERCENTAGE"]
                   }
 
+country = ["IE"] # Should be None if all countries available in the PAF cost database should be considered
 
 # Define the forest habitats
 classification_path = 'data/natura/classification/habitat_classification.xlsx'
@@ -103,18 +104,21 @@ def filter_by_habitat(df, forest_path=classification_path, leave_type=leave_type
 
 
 ### Filter based on country ########################################################################################
-def filter_by_country(df):
+def filter_by_country(df, country=None):
     """
     Filters sites of df based on country and returns a list of site codes that are within countries of interest
     according to the compute_cost.py.
 
     Parameters:
         df (pd.DataFrame): The main DataFrame containing habitat data with columns incl. "COUNTRY_CODE" and "SITECODE".
+        country (string): The list of country to filter on.
 
     Returns: list: A list of unique site codes (`SITECODE`) that are within countries of interest.
     """
-    from compute_cost import get_country
-    country = get_country()
+    if country is None:
+        from compute_cost import get_country
+        country = get_country()
+
     return df[df["COUNTRY_CODE"].isin(country)]["SITECODE"].unique()
 
 ### Filter for sites subject to reforestation and conservation measures #############################################
@@ -165,7 +169,7 @@ def get_natura_sites(dfs=None):
     # Filter sites
     filter_habitat_sites = filter_by_habitat(habitats)
     filter_inconsistency_sites = filter_for_inconsistencies(habitats)
-    filter_country_sites = filter_by_country(natura)
+    filter_country_sites = filter_by_country(natura, country=country)
     filter_sac_sites = filter_for_sac(natura)
 
     # Find the intersect sites
@@ -197,9 +201,8 @@ def check_for_area(df):
 
 
 ###### PROCESS DATA ################################################################################################
-def process_natura_sites(gdf_path=gdf_path, data_path=data_path, dict_variables=dict_variables):
-    print("\nProcessing Natura 2000 sites\n")
-    gdf = load_data(gdf_path)
+def process_data(data_path=data_path, dict_variables=dict_variables):
+    # Load data
     data = load_data(data_path, table_dict=dict_variables)
 
     # Format data
@@ -216,6 +219,14 @@ def process_natura_sites(gdf_path=gdf_path, data_path=data_path, dict_variables=
     # Check for inconsistencies
     check_for_area(data_processed["HABITATS"])
 
+    return data_processed, sites_of_interest
+
+def process_natura_sites(gdf_path=gdf_path, data_path=data_path, dict_variables=dict_variables):
+    print("\nProcessing Natura 2000 sites\n")
+
+    gdf = load_data(gdf_path)
+    data_processed, sites_of_interest = process_data(data_path, dict_variables)
+
     print("\nNatura 2000 data processed\n")
 
     # Process gdf
@@ -226,10 +237,9 @@ def process_natura_sites(gdf_path=gdf_path, data_path=data_path, dict_variables=
 
     print("\nNatura 2000 polygons processed\n")
 
+    # Check that only consider sites of interest
+    evi = evi[evi["SITECODE"].isin(sites_of_interest)]
+
     return data_processed, gdf_processed, evi
-
-###### GET TREATED DATA #############################################################################################
-
-data_processed, gdf_processed, evi = process_natura_sites()
 
 

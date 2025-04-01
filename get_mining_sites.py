@@ -74,6 +74,7 @@ def allocate_missing_geometry(gdf):
     return gdf
 
 def remove_duplicated_sites(gdf, filter_ownership=filter_ownership):
+    """Remove duplicated sites from the gdf of interest. Reasons for dropping these sites are indicated in comments."""
     # Manual assignment of duplicates based on associated ownership structure in own_treated
     to_drop =["COM00272.02", "COM00962.02", "COM00583.02", "COM00205.06", "COM01019.03", "COM01016.03", "COM01016.04", "COM00850.02"] + [ # Reason 1: Subsites (0X) or main-sites (00) within one facility have the same geometry and same ownership structure: we keep only one subsite - the lowest number i.e. 01 if 01 and 02 exist or 00 for 00 and 04)
         "COM00824.00", "COM01282.00", "COM01134.00", "COM00969.00", "COM00489.01", "COM00489.02"] + [                                     # Reason 2: Subsites (0X) or main-sites (00) within different facilities have the same geometry and same ownership structure: keep one facility - the one with the lowest value in facility_id)
@@ -172,7 +173,7 @@ def check_for_overlapping_polygons(gdf, gdf2):
 
 ###### PROCESS DATA #################################################################################################
 
-def process_mining_sites(gdf_path, gdf2_path=None, filter_ownership=True, by_parent_id=True):
+def process_mining_sites(gdf_path, gdf2_path=gdf2_path, filter_ownership=filter_ownership, by_parent_id=by_parent_id):
     """Processes mining sites and returns a filtered geodataframe and corresponding ownership dataframe."""
     print("\nProcessing mining sites\n")
     # Generate gdf_treated
@@ -193,16 +194,12 @@ def process_mining_sites(gdf_path, gdf2_path=None, filter_ownership=True, by_par
     # Process gdf
     evi = get_satellite(gdf_processed, "facility_id", "production_start", evi_path)
 
+    # Select sites of interest
+    evi = evi[evi["facility_id"].isin(gdf_processed["facility_id"])]
+
     # Generate ownership files based on filtered sites from gdf_treated
     own = get_mine_owners.process_mine_ownership()
-    own_processed = own[own["facility_id"].isin(gdf_treated["facility_id"])].drop(columns="id")
+    own_processed = own[own["facility_id"].isin(gdf_processed["facility_id"])].drop(columns="id")
 
-    return own_processed, gdf_processed, evi
-
-
-###### GET TREATED DATA #############################################################################################
-
-gdf_treated, own_treated, evi = process_mining_sites(gdf_path, gdf2_path=gdf2_path, filter_ownership=filter_ownership,
-                                                     by_parent_id=by_parent_id)
-
+    return gdf_processed, own_processed, evi
 

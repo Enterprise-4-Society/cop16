@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import mapping
 
-
 ###### DEFINE PARAMETERS ###########################################################################################
 # Define ee parameters
 crs = 'EPSG:4326'
@@ -80,24 +79,24 @@ def add_post_event(gdf, date_label, post_date=post_date):
     return gdf_with_post
 
 
-def remove_processed_sites(df, processed_sites_path, date_label):
+def remove_processed_sites(df, processed_sites_path, site_code_label, date_label):
     # Define sites already processed
-    processed_sites = pd.read_csv(processed_sites_path)[["SITECODE", "End year"]].rename({"End year": date_label}, axis="columns")
+    processed_sites = pd.read_csv(processed_sites_path)[[site_code_label, "End year"]].rename({"End year": date_label}, axis="columns")
 
     # Define sites that need to be processed
-    to_process_sites = df[["SITECODE", date_label]]
+    to_process_sites = df[[site_code_label, date_label]]
 
     # Merge with indicator to track row existence
     merged = to_process_sites.merge(processed_sites, on=list(to_process_sites.columns), how='outer', indicator=True)
 
     # Get date-site pairs that have not been processed yet
-    sites = merged[merged["_merge"] != "both"][["SITECODE", date_label]]
+    sites = merged[merged["_merge"] != "both"][[site_code_label, date_label]]
 
     # Return error if all sites have been processed
     if sites.empty:
-        raise ValueError("All sites have been already processed.")
+        print("All sites have been already processed.")
 
-    df_filtered = df.merge(sites, on=["SITECODE", date_label], how="inner")
+    df_filtered = df.merge(sites, on=[site_code_label, date_label], how="inner")
 
     return df_filtered
 
@@ -198,8 +197,6 @@ def compute_evi(image, area, crs, scale):
         # Get a number (not an object)
         return dict_evi.getInfo()["EVI"]
 
-
-
 ###### PROCESS EVI #################################################################################################
 
 def get_satellite(gdf, site_code_label, date_label, output_folder, crs=crs, span=span, scale=scale, summer=summer):
@@ -219,7 +216,10 @@ def get_satellite(gdf, site_code_label, date_label, output_folder, crs=crs, span
 
     # Remove date-site pairs already processed in the output file
     if file_exists:
-        geometries = remove_processed_sites(geometries, final_path, date_label)
+        geometries = remove_processed_sites(geometries, final_path, site_code_label, date_label)
+        if geometries.empty:
+            print("Opening existing file")
+            return pd.read_csv(final_path)
 
     # Remove sites with errors
     geometries = remove_error_sites(geometries, site_code_label)
